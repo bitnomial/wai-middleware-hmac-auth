@@ -1,0 +1,29 @@
+---
+
+version: 1.0.0.0
+name: wai-middleware-hmac-auth
+synopsis: A flexible library for adding HMAC auth to a Wai application
+
+license: BSD-3-Clause
+copyright: 2022 Bitnomial, Inc.
+
+ghc-options: -Wall
+
+library:
+  source-dirs: src
+  when:
+    - condition: false
+      other-modules: Paths_wai_middleware_hmac_auth
+
+dependencies:
+  - base >=4.15 && <5
+  - base64-bytestring ^>=1.2
+  - bytestring >=0.10 && <0.12
+  - case-insensitive ^>=1.2
+  - cryptonite ^>=0.30
+  - http-api-data >=0.4 && <0.6
+  - http-types ^>=0.12
+  - http-client ^>=0.7
+  - memory >=0.15 && <0.19
+  - transformers >=0.5 && <0.7
+  - wai ^>=3.2

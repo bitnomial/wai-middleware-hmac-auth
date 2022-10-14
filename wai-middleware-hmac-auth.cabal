@@ -1,0 +1,33 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.34.7.
+--
+-- see: https://github.com/sol/hpack
+
+name:           wai-middleware-hmac-auth
+version:        1.0.0.0
+synopsis:       A flexible library for adding HMAC auth to a Wai application
+copyright:      2022 Bitnomial, Inc.
+license:        BSD-3-Clause
+license-file:   LICENSE
+build-type:     Simple
+
+library
+  exposed-modules:
+      Network.Wai.Middleware.Auth.HMAC
+  hs-source-dirs:
+      src
+  ghc-options: -Wall
+  build-depends:
+      base >=4.15 && <5
+    , base64-bytestring ==1.2.*
+    , bytestring >=0.10 && <0.12
+    , case-insensitive ==1.2.*
+    , cryptonite ==0.30.*
+    , http-api-data >=0.4 && <0.6
+    , http-client ==0.7.*
+    , http-types ==0.12.*
+    , memory >=0.15 && <0.19
+    , transformers >=0.5 && <0.7
+    , wai ==3.2.*
+  default-language: Haskell2010
