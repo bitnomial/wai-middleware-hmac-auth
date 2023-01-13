@@ -14,6 +14,7 @@ module Network.Wai.Middleware.Auth.HMAC (
     -- * Keys
     AuthKey,
     mkAuthKey,
+    encodeAuthKey,
 
     -- * Framework
     HmacAuth (..),
@@ -63,7 +64,7 @@ import Web.HttpApiData (FromHttpApiData, ToHttpApiData, parseHeader, toHeader)
 
 
 -- | An opaque representation of key material
-newtype AuthKey = AuthKey {_unAuthKey :: ByteString}
+newtype AuthKey = AuthKey {unAuthKey :: ByteString}
     deriving (Eq, Ord)
 
 
@@ -73,6 +74,10 @@ instance Show AuthKey where
 
 mkAuthKey :: ByteString -> AuthKey
 mkAuthKey = AuthKey
+
+
+encodeAuthKey :: AuthKey -> ByteString
+encodeAuthKey = unAuthKey
 
 
 -- | A collection of the request fields which might be used in an HMAC auth
