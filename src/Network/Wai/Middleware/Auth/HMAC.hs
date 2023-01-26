@@ -41,6 +41,7 @@ module Network.Wai.Middleware.Auth.HMAC (
     SHA3_512,
 ) where
 
+import Control.Exception (Exception, throwIO)
 import Control.Monad (unless, (<=<))
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Except (runExceptT, throwE)
@@ -49,10 +50,12 @@ import Crypto.MAC.HMAC (HMAC, hmacLazy)
 import qualified Data.ByteArray as BA
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Base64 as B64
+import Data.ByteString.Builder (stringUtf8)
 import qualified Data.ByteString.Char8 as BS8
 import Data.ByteString.Lazy (LazyByteString)
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.CaseInsensitive as CI
+import Data.Data (Typeable)
 import Data.IORef (atomicModifyIORef, newIORef)
 import Data.List (sortOn, uncons)
 import Data.Tuple (swap)
@@ -127,7 +130,7 @@ clientToHmacRequest request =
 -- | Request processing logic.  Use the 'hashAlgorithm' type parameter to select
 -- the hashing algorithm.
 data HmacAuth hashAlgorithm id = HmacAuth
-    { requestDigest :: HmacRequest -> LazyByteString
+    { requestDigest :: HmacRequest -> Either (HmacError id) LazyByteString
     -- ^ Calculate the message that the authenticating identity should sign
     , extractIdentity :: HmacRequest -> Maybe id
     -- ^ Pull the authenticating identity out of the request
@@ -143,6 +146,10 @@ data HmacAuth hashAlgorithm id = HmacAuth
 -- | This is a canned request digest to use:
 --
 -- @$METHOD$PATH$QUERYSTRING$HEADERS$BODY@
+--
+-- **NOTE:** This is an example implementation which can be used for a quick, secure, HMAC scheme. However, it is
+-- expected that users of this library vendor their own version of 'hmacAuth' if their authentication scheme does
+-- not exactly line up with this implementation.
 hmacAuth ::
     (FromHttpApiData id, ToHttpApiData id) =>
     -- | Identity header e.g. @X-Identity@
@@ -162,15 +169,16 @@ hmacAuth identityHeader signatureHeader includeHeader =
         }
   where
     requestDigest request =
-        (mconcat . fmap BSL.fromStrict)
-            ( [ method request
-              , normalizePath $ path request
-              , normalizeQMark $ queryString request
-              ]
-                <> [ CI.original name <> value | (name, value) <- sortOn fst . filter (includeHeader . fst) $ headers request
-                   ]
-            )
-            <> body request
+        Right $
+            (mconcat . fmap BSL.fromStrict)
+                ( [ method request
+                  , normalizePath $ path request
+                  , normalizeQMark $ queryString request
+                  ]
+                    <> [ CI.original name <> value | (name, value) <- sortOn fst . filter (includeHeader . fst) $ headers request
+                       ]
+                )
+                <> body request
     normalizePath qs
         | Just ('/', _) <- BS8.uncons qs = qs
         | otherwise = BS8.cons '/' qs
@@ -207,11 +215,9 @@ requestSignature ::
     HmacAuth a id ->
     AuthKey ->
     HmacRequest ->
-    ByteString
+    Either (HmacError id) ByteString
 requestSignature auth (AuthKey authKey) =
-    BA.convert @(HMAC a) @ByteString
-        . hmacLazy authKey
-        . requestDigest auth
+    fmap (BA.convert @(HMAC a) @ByteString . hmacLazy authKey) . requestDigest auth
 
 
 verifySignature ::
@@ -225,7 +231,8 @@ verifySignature auth getAuthKey request = runExceptT $ do
     authId <- maybe (throwE UnknownIdentity) pure $ extractIdentity auth request
     sig <- maybe (throwE $ NoSignature authId) pure $ extractSignature auth request
     authKey <- maybe (throwE $ UnknownKey authId) pure =<< lift (getAuthKey authId)
-    unless (sig == requestSignature auth authKey request) . throwE $ InvalidSignature authId
+    constructedSignature <- either throwE pure $ requestSignature auth authKey request
+    unless (sig == constructedSignature) . throwE $ InvalidSignature authId
 
 
 data HmacError id
@@ -237,6 +244,12 @@ data HmacError id
       UnknownKey id
     | -- | Signature is invalid
       InvalidSignature id
+    | -- | Unable to sign request
+      UnsignableRequest String
+    deriving (Show)
+
+
+instance (Typeable id, Show id) => Exception (HmacError id)
 
 
 hmacVerifyMiddleware ::
@@ -274,6 +287,7 @@ hmacVerifyMiddleware auth getAuthKey app request withResponse = do
                     "Unable to parse signature from request"
             UnknownKey{} -> unauthorized
             InvalidSignature{} -> unauthorized
+            UnsignableRequest reason -> Wai.responseBuilder status400 mempty (stringUtf8 reason)
     unauthorized =
         Wai.responseBuilder
             status401
@@ -286,7 +300,7 @@ hmacVerifyMiddleware auth getAuthKey app request withResponse = do
 -- >>> mgr <- newManager defaultManagerSettings { managerModifyRequest = hmacSignRequest _auth _id _getAuthKey }
 hmacSignRequest ::
     forall a id.
-    HashAlgorithm a =>
+    (HashAlgorithm a, Typeable id, Show id) =>
     HmacAuth a id ->
     -- | Client identity
     id ->
@@ -296,7 +310,8 @@ hmacSignRequest ::
     IO HttpClient.Request
 hmacSignRequest auth signerId getAuthKey request = do
     authKey <- getAuthKey
-    pure $ setSignature auth (sig authKey) requestToSign
+    theSignature <- either throwIO pure $ sig authKey
+    pure $ setSignature auth theSignature requestToSign
   where
     sig authKey = requestSignature auth authKey . clientToHmacRequest $ requestToSign
     requestToSign = setIdentity auth signerId request
