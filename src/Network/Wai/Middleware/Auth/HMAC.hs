@@ -55,6 +55,9 @@ import qualified Data.ByteString.Lazy as BSL
 import qualified Data.CaseInsensitive as CI
 import Data.IORef (atomicModifyIORef, newIORef)
 import Data.List (sortOn, uncons)
+import qualified Data.Text as Text
+import Data.Text.Encoding (encodeUtf8)
+import Data.Time (defaultTimeLocale, formatTime, getCurrentTime)
 import Data.Tuple (swap)
 import qualified Network.HTTP.Client as HttpClient
 import Network.HTTP.Types (Header, HeaderName, Method, RequestHeaders, status400, status401)
@@ -137,6 +140,10 @@ data HmacAuth hashAlgorithm id = HmacAuth
     -- ^ Pull the signature out of the request
     , setSignature :: ByteString -> HttpClient.Request -> HttpClient.Request
     -- ^ Attach the signature to the request
+    , extractTimestamp :: HmacRequest -> Maybe Text.Text
+    -- ^ Pull the timestamp out of the request
+    , setTimestamp :: Text.Text -> HttpClient.Request -> HttpClient.Request
+    -- ^ Attach the timestamp to the request
     }
 
 
@@ -149,21 +156,26 @@ hmacAuth ::
     HeaderName ->
     -- | Signature header e.g. @X-Signature@
     HeaderName ->
+    -- | Timestamp header in seconds since Unix Epoch e.g. @X-Timestamp@
+    HeaderName ->
     -- | Filter the set of headers to include in the message
     (HeaderName -> Bool) ->
     HmacAuth a id
-hmacAuth identityHeader signatureHeader includeHeader =
+hmacAuth identityHeader signatureHeader timestampHeader includeHeader =
     HmacAuth
         { requestDigest
         , extractIdentity
         , setIdentity
         , extractSignature
         , setSignature
+        , extractTimestamp
+        , setTimestamp
         }
   where
     requestDigest request =
         (mconcat . fmap BSL.fromStrict)
-            ( [ method request
+            ( [ maybe "" encodeUtf8 $ extractTimestamp request
+              , method request
               , normalizePath $ path request
               , normalizeQMark $ queryString request
               ]
@@ -190,6 +202,12 @@ hmacAuth identityHeader signatureHeader includeHeader =
         request
             { HttpClient.requestHeaders =
                 setHeader (signatureHeader, B64.encode sig) $ HttpClient.requestHeaders request
+            }
+    extractTimestamp = (either (const Nothing) pure . parseHeader <=< lookup timestampHeader) . headers
+    setTimestamp theTimestamp request =
+        request
+            { HttpClient.requestHeaders =
+                setHeader (timestampHeader, toHeader theTimestamp) $ HttpClient.requestHeaders request
             }
 
 
@@ -296,7 +314,9 @@ hmacSignRequest ::
     IO HttpClient.Request
 hmacSignRequest auth signerId getAuthKey request = do
     authKey <- getAuthKey
-    pure $ setSignature auth (sig authKey) requestToSign
+    secondsSinceEpoch <- Text.pack . formatTime defaultTimeLocale "%s" <$> getCurrentTime
+    pure $ setSignature auth (sig authKey secondsSinceEpoch) (requestToSign secondsSinceEpoch)
   where
-    sig authKey = requestSignature auth authKey . clientToHmacRequest $ requestToSign
-    requestToSign = setIdentity auth signerId request
+    sig authKey ts = requestSignature auth authKey . clientToHmacRequest $ requestToSign ts
+    requestToSign ts = setIdentity auth signerId (requestWithTimestamp ts)
+    requestWithTimestamp ts = setTimestamp auth ts request
