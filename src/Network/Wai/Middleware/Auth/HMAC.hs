@@ -310,8 +310,12 @@ hmacSignRequest ::
     IO HttpClient.Request
 hmacSignRequest auth signerId getAuthKey request = do
     authKey <- getAuthKey
+    putStrLn "SIGNING REQUEST"
+    print $ requestDigest auth hmacRequest
     theSignature <- either throwIO pure $ sig authKey
+    print theSignature
     pure $ setSignature auth theSignature requestToSign
   where
-    sig authKey = requestSignature auth authKey . clientToHmacRequest $ requestToSign
+    sig authKey = requestSignature auth authKey hmacRequest
+    hmacRequest = clientToHmacRequest requestToSign
     requestToSign = setIdentity auth signerId request
