@@ -20,7 +20,7 @@ dependencies:
   - base64-bytestring ^>=1.2
   - bytestring >=0.10 && <0.12
   - case-insensitive ^>=1.2
-  - cryptonite ^>=0.30
+  - crypton ^>=0.32
   - http-api-data >=0.4 && <0.6
   - http-types ^>=0.12
   - http-client ^>=0.7
