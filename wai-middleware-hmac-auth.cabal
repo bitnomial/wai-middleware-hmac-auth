@@ -1,6 +1,6 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.34.7.
+-- This file has been generated from package.yaml by hpack version 0.36.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -23,7 +23,7 @@ library
     , base64-bytestring ==1.2.*
     , bytestring >=0.10 && <0.12
     , case-insensitive ==1.2.*
-    , crypton ==0.32.*
+    , crypton >=0.32 && <0.35
     , http-api-data >=0.4 && <0.6
     , http-client ==0.7.*
     , http-types ==0.12.*
