@@ -59,6 +59,7 @@ import Data.Data (Typeable)
 import Data.IORef (atomicModifyIORef, newIORef)
 import Data.List (sortOn, uncons)
 import Data.Tuple (swap)
+import Debug.Trace (trace)
 import qualified Network.HTTP.Client as HttpClient
 import Network.HTTP.Types (Header, HeaderName, Method, RequestHeaders, status400, status401)
 import Network.Wai (Middleware)
@@ -169,7 +170,7 @@ hmacAuth identityHeader signatureHeader includeHeader =
         }
   where
     requestDigest request =
-        Right $
+        trace (show request) . Right $
             (mconcat . fmap BSL.fromStrict)
                 ( [ method request
                   , normalizePath $ path request
@@ -211,13 +212,16 @@ setHeader h@(hName, hValue) = \case
 
 requestSignature ::
     forall a id.
-    HashAlgorithm a =>
+    (HashAlgorithm a) =>
     HmacAuth a id ->
     AuthKey ->
     HmacRequest ->
     Either (HmacError id) ByteString
-requestSignature auth (AuthKey authKey) =
-    fmap (BA.convert @(HMAC a) @ByteString . hmacLazy authKey) . requestDigest auth
+requestSignature auth (AuthKey authKey) req =
+    fmap doSig theSig
+  where
+    theSig = requestDigest auth req
+    doSig bs = trace ("THE SIG: " <> show bs <> "\nTHE REQ: " <> show req) . BA.convert @(HMAC a) @ByteString $ hmacLazy authKey bs
 
 
 verifySignature ::
@@ -230,9 +234,9 @@ verifySignature ::
 verifySignature auth getAuthKey request = runExceptT $ do
     authId <- maybe (throwE UnknownIdentity) pure $ extractIdentity auth request
     sig <- maybe (throwE $ NoSignature authId) pure $ extractSignature auth request
-    authKey <- maybe (throwE $ UnknownKey authId) pure =<< lift (getAuthKey authId)
+    authKey <- trace ("HEADER_SIG: " <> show sig) . maybe (throwE $ UnknownKey authId) pure =<< lift (getAuthKey authId)
     constructedSignature <- either throwE pure $ requestSignature auth authKey request
-    unless (sig == constructedSignature) . throwE $ InvalidSignature authId
+    trace ("CONSTRUCTED_SIG: " <> show constructedSignature) . unless (sig == constructedSignature) . throwE $ InvalidSignature authId
 
 
 data HmacError id
@@ -254,7 +258,7 @@ instance (Typeable id, Show id) => Exception (HmacError id)
 
 hmacVerifyMiddleware ::
     forall a id.
-    HashAlgorithm a =>
+    (HashAlgorithm a) =>
     HmacAuth a id ->
     -- | Get key for identity
     (id -> IO (Maybe AuthKey)) ->
