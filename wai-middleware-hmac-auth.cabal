@@ -1,6 +1,6 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.36.0.
+-- This file has been generated from package.yaml by hpack version 0.37.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -21,10 +21,10 @@ library
   build-depends:
       base >=4.15 && <5
     , base64-bytestring ==1.2.*
-    , bytestring >=0.10 && <0.12
+    , bytestring >=0.10 && <0.13
     , case-insensitive ==1.2.*
-    , crypton >=0.32 && <0.35
-    , http-api-data >=0.4 && <0.6
+    , crypton >=0.32 && <1.1
+    , http-api-data >=0.4 && <0.7
     , http-client ==0.7.*
     , http-types ==0.12.*
     , memory >=0.15 && <0.19
