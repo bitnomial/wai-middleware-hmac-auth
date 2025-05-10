@@ -55,6 +55,7 @@ import qualified Data.ByteString.Char8 as BS8
 import Data.ByteString.Lazy (LazyByteString)
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.CaseInsensitive as CI
+import Data.Char (toUpper)
 import Data.Data (Typeable)
 import Data.IORef (atomicModifyIORef, newIORef)
 import Data.List (sortOn, uncons)
@@ -175,7 +176,8 @@ hmacAuth identityHeader signatureHeader includeHeader =
                   , normalizePath $ path request
                   , normalizeQMark $ queryString request
                   ]
-                    <> [ CI.original name <> value | (name, value) <- sortOn fst . filter (includeHeader . fst) $ headers request
+                    <> [ BS8.map toUpper (CI.original name) <> value
+                       | (name, value) <- sortOn fst . filter (includeHeader . fst) $ headers request
                        ]
                 )
                 <> body request
@@ -211,7 +213,7 @@ setHeader h@(hName, hValue) = \case
 
 requestSignature ::
     forall a id.
-    HashAlgorithm a =>
+    (HashAlgorithm a) =>
     HmacAuth a id ->
     AuthKey ->
     HmacRequest ->
@@ -254,7 +256,7 @@ instance (Typeable id, Show id) => Exception (HmacError id)
 
 hmacVerifyMiddleware ::
     forall a id.
-    HashAlgorithm a =>
+    (HashAlgorithm a) =>
     HmacAuth a id ->
     -- | Get key for identity
     (id -> IO (Maybe AuthKey)) ->
