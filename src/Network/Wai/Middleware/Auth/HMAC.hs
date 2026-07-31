@@ -41,7 +41,7 @@ module Network.Wai.Middleware.Auth.HMAC (
     SHA3_512,
 ) where
 
-import Control.Exception (Exception, throwIO)
+import Control.Exception (Exception, mask, onException, throwIO)
 import Control.Monad (unless, (<=<))
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Except (runExceptT, throwE)
@@ -260,8 +260,14 @@ hmacVerifyMiddleware ::
     HmacAuth a id ->
     -- | Get key for identity
     (id -> IO (Maybe AuthKey)) ->
+    -- | Report failures. This is meant for operators to dig into the details
+    -- of why a verification failed. It is not meant to be exposed to users.
+    --
+    -- For example, on an 'UnknownKey' error, the client only sees a HTTP401 - Unauthorized
+    -- error, whereas an operator will be able to see what happened.
+    (HmacError id -> IO ()) ->
     Middleware
-hmacVerifyMiddleware auth getAuthKey app request withResponse = do
+hmacVerifyMiddleware auth getAuthKey reportFailureInternal app request withResponse = do
     requestBody <- Wai.strictRequestBody request
     verifySignature auth getAuthKey (waiToHmacRequest request requestBody)
         >>= either onError (onSuccess requestBody)
@@ -275,26 +281,46 @@ hmacVerifyMiddleware auth getAuthKey app request withResponse = do
                 }
             withResponse
 
-    onError =
-        withResponse . \case
-            UnknownIdentity ->
-                Wai.responseBuilder
-                    status400
-                    mempty
-                    "Unable to parse authenticating identity from request"
-            NoSignature{} ->
-                Wai.responseBuilder
-                    status400
-                    mempty
-                    "Unable to parse signature from request"
-            UnknownKey{} -> unauthorized
-            InvalidSignature{} -> unauthorized
-            UnsignableRequest reason -> Wai.responseBuilder status400 mempty (stringUtf8 reason)
+    onError err =
+        -- We guard against exceptions in 'reportFailureInternal'
+        -- such that we always respond to the customer.
+        -- Then, any exception from 'reportFailureInternal'
+        -- is re-thrown.
+        reportFailureInternal err
+            `thenFinally` withResponse
+                ( case err of
+                    UnknownIdentity ->
+                        Wai.responseBuilder
+                            status400
+                            mempty
+                            "Unable to parse authenticating identity from request"
+                    NoSignature{} ->
+                        Wai.responseBuilder
+                            status400
+                            mempty
+                            "Unable to parse signature from request"
+                    UnknownKey{} -> unauthorized
+                    InvalidSignature{} -> unauthorized
+                    UnsignableRequest reason -> Wai.responseBuilder status400 mempty (stringUtf8 reason)
+                )
     unauthorized =
         Wai.responseBuilder
             status401
             mempty
             mempty
+
+
+-- | Like 'finally', but returns the result
+-- of the second action, even if the first
+-- action throws an exception
+--
+-- Exceptions thrown by the first action are re-thrown,
+-- just like 'finally'
+thenFinally :: IO a -> IO b -> IO b
+action `thenFinally` sequel =
+    mask $ \restore -> do
+        _ <- restore action `onException` sequel
+        sequel
 
 
 -- | Upgrade a 'Manager' to sign requests. For example:

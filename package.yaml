@@ -1,10 +1,10 @@
 ---
-version: 1.0.0.0
+version: 1.1.0.0
 name: wai-middleware-hmac-auth
 synopsis: A flexible library for adding HMAC auth to a Wai application
 
 license: BSD-3-Clause
-copyright: 2022 Bitnomial, Inc.
+copyright: 2026 Bitnomial, Inc.
 
 ghc-options: -Wall
 
